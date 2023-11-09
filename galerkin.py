@@ -1,3 +1,34 @@
+"""
+galerkin.py - A Python module for solving partial differential equations using Galerkin methods.
+
+This module provides a collection of classes and functions for solving partial differential equations (PDEs)
+using Galerkin methods. It includes various function spaces, basis functions, and tools for assembling matrices
+and solving linear systems arising from finite element discretizations.
+
+Contents:
+- FunctionSpace: Base class for defining function spaces.
+- Legendre: Function space based on Legendre polynomials.
+- Chebyshev: Function space based on Chebyshev polynomials.
+- Sines: Function space for trigonometric functions (sines).
+- Cosines: Function space for trigonometric functions (cosines).
+- Dirichlet: Class for handling Dirichlet boundary conditions.
+- Neumann: Class for handling Neumann boundary conditions.
+- Composite: Base class for function spaces created as linear combinations of orthogonal basis functions.
+- DirichletLegendre: Function space with Dirichlet boundary conditions based on Legendre polynomials.
+- DirichletChebyshev: Function space with Dirichlet boundary conditions based on Chebyshev polynomials.
+- NeumannLegendre: Function space with Neumann boundary conditions based on Legendre polynomials (not implemented).
+- NeumannChebyshev: Function space with Neumann boundary conditions based on Chebyshev polynomials (not implemented).
+- BasisFunction: Base class for defining basis functions.
+- TestFunction: Basis function for testing purposes.
+- TrialFunction: Basis function for trial purposes.
+- assemble_generic_matrix: Assemble a generic matrix using basis functions.
+- inner: Compute the inner product between basis functions.
+- project: Project a given function onto a function space.
+- L2_error: Compute the L2 error between two functions.
+- test_project: Test function for projecting a function onto various function spaces.
+- test_helmholtz: Test function for solving the Helmholtz equation with different function spaces.
+- test_convection_diffusion: Test function for solving the convection-diffusion problem with different function spaces.
+"""
 import numpy as np
 import sympy as sp
 import scipy.sparse as sparse
@@ -141,12 +172,13 @@ class FunctionSpace:
         """
         Get the reference domain of the FunctionSpace.
 
-        Raises:
-        - RuntimeError: Always raises a RuntimeError.
+        Returns:
+        - tuple: The reference domain for the function space, typically (-1, 1).
 
-        This property is intended to represent the reference domain of the FunctionSpace.
-        However, it always raises a RuntimeError, indicating that it is not implemented or defined.
+        This property returns the reference domain for the function space, which is used for mapping the physical domain
+        of elements to a standardized reference domain. The reference domain is commonly (-1, 1).
         """
+        return (-1, 1)
 
     @property
     def domain_factor(self):
@@ -216,12 +248,9 @@ class FunctionSpace:
         If 'sympy' is set to True, it returns a symbolic expression (using SymPy) representing the basis function.
         """
         if sympy:
-                # Return a symbolic expression for the basis function (if implemented using SymPy).
-                # You may need to implement the symbolic expression separately.
-                return NotImplemented  # Placeholder for symbolic expression
+            return sp.legendre(j, x)
         else:
-            # Return a placeholder indicating that the basis function is not implemented.
-            return NotImplemented  # Placeholder for non-implemented basis function
+            return Legendre.basis_function(j)
 
     def derivative_basis_function(self, j, k=1):
         """
@@ -238,7 +267,7 @@ class FunctionSpace:
         of the j-th basis function of the FunctionSpace. You may need to implement the derivative
         functions separately based on your specific application.
         """
-        raise RuntimeError
+        return BasisFunction(j).deriv(k)
 
     def evaluate_basis_function(self, Xj, j):
         """
@@ -415,25 +444,31 @@ class Legendre(FunctionSpace):
 
     def basis_function(self, j, sympy=False):
         """
-        Get the j-th Legendre polynomial basis function.
+        Get the j-th Legendre basis function.
 
         Parameters:
-        - j (int): The index of the Legendre polynomial basis function to retrieve.
-        - sympy (bool, optional): If True, return a symbolic expression using SymPy.
-                                If False (default), return a callable function representing the basis function.
+        - j (int): The index (degree) of the basis function to retrieve.
+        - sympy (bool, optional): If True, returns a symbolic expression using sympy.
+                                  If False (default), returns a numerical representation using numpy.
 
         Returns:
-        - function or sympy.Expr: The j-th Legendre polynomial basis function.
+        - Leg or sp.Expr: The j-th Legendre basis function as a numpy polynomial Legendre instance
+                          or a sympy expression, depending on the 'sympy' flag.
 
-        This method is used to retrieve the j-th Legendre polynomial basis function within the Legendre polynomial space.
-        By default, it returns a callable function representing the basis function. If 'sympy' is set to True, it returns
-        a symbolic expression (using SymPy) representing the basis function.
+        The method retrieves the j-th Legendre basis function of the function space. If the 'sympy'
+        parameter is True, it returns a symbolic expression using sympy, which can be used for
+        symbolic computations. Otherwise, it returns a numerical representation as a numpy polynomial
+        Legendre instance, which can be used for numerical evaluations and operations.
+
+        Legendre polynomials are orthogonal polynomials with respect to the weight function w(x) = 1
+        on the interval [-1, 1]. They are widely used in numerical analysis for polynomial approximation
+        and in solving differential equations.
         """
         if sympy:
-            # Return a symbolic expression for the Legendre polynomial basis function (if implemented using SymPy).
+            # Use sympy to return a symbolic expression for the j-th Legendre polynomial
             return sp.legendre(j, x)
         else:
-            # Return a callable function representing the Legendre polynomial basis function.
+            # Use numpy to return the j-th Legendre polynomial as a numpy polynomial object
             return Leg.basis(j)
 
     def derivative_basis_function(self, j, k=1):
@@ -467,7 +502,14 @@ class Legendre(FunctionSpace):
         The L2 norm quantifies the magnitude of these basis functions within the function space. This operation is useful
         for assessing the orthogonality and scaling of Legendre polynomials in numerical computations.
         """
-        raise NotImplementedError("L2_norm_sq is not implemented.")
+        norm_sq_sum = 0
+        for j in range(N):  # Assuming self.N is the number of basis functions
+            # Get the j-th Legendre basis function
+            Pj = self.basis_function(j, sympy=False)
+            # Integrate Pj(x)^2 from -1 to 1
+            norm_sq, _ = quad(lambda x: Pj(x)**2, -1, 1)
+            norm_sq_sum += norm_sq
+        return norm_sq_sum
 
 
     def mass_matrix(self):
@@ -481,7 +523,9 @@ class Legendre(FunctionSpace):
         The mass matrix represents the influence of these basis functions on the system's behavior and is commonly used
         in numerical simulations and finite element analysis for solving partial differential equations and other tasks.
         """
-        raise NotImplementedError("mass_matrix is not implemented.")
+        diagonal_elements = [self.basis_function(i) for i in range(self.N)]
+        return np.diag(diagonal_elements)
+
 
 
     def eval(self, uh, xj):
@@ -627,7 +671,15 @@ class Chebyshev(FunctionSpace):
         - The implementation of this method is not provided (raises NotImplementedError).
 
         """
-        raise NotImplementedError("L2_norm_sq is not implemented.")
+        x = sp.symbols('x')
+        # Start with the square of the 0th polynomial
+        norm_sq_0 = sp.integrate((self.basis_function(0, sympy=True)**2) * self.weight(x), (x, -1, 1))
+        norm_sq_sum = norm_sq_0
+        # Sum the squared L2 norms of the rest of the Chebyshev polynomials
+        for j in range(1, N):
+            norm_sq_j = sp.integrate((self.basis_function(j, sympy=True)**2) * self.weight(x), (x, -1, 1))
+            norm_sq_sum += norm_sq_j
+        return float(norm_sq_sum)
 
     def mass_matrix(self):
         """

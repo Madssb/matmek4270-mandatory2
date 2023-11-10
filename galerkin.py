@@ -116,7 +116,7 @@ class Legendre(FunctionSpace):
         return 2/(2*np.arange(N) +1)
 
     def mass_matrix(self):
-        return sparse.diags(self.L2_norm_sq(self.N+1))
+        return sparse.diags(self.L2_norm_sq(self.N+1), format="csr")
 
 
     def eval(self, uh, xj):
@@ -148,7 +148,7 @@ class Chebyshev(FunctionSpace):
         return l2_norm_sq
 
     def mass_matrix(self):
-        return sparse.diags(self.L2_norm_sq(self.N+1))
+        return sparse.diags(self.L2_norm_sq(self.N+1), format="csr")
 
     def eval(self, uh, xj):
         xj = np.atleast_1d(xj)
@@ -222,7 +222,7 @@ class Cosines(Trigonometric):
         return lambda Xj: np.cos(j*np.pi*Xj)
 
     def derivative_basis_function(self, j, k=1):
-        scale = (j*np.pi)**k * {0: 1, 1: -1}[(k+1//2) % 2]
+        scale = (j*np.pi)**k * {0: 1, 1: -1}[((k+1)//2) % 2]
         if k % 2 == 0:
             return lambda Xj: scale*np.cos(j*np.pi*Xj)
         else:
@@ -322,7 +322,9 @@ class NeumannLegendre(Composite, Legendre):
          
 
     def basis_function(self, j, sympy=False):
-        return Legendre.basis_function(j, sympy) - j*(j+1)/(j+2)/(j+3)*Legendre.basis_function(j+2, sympy)
+        if sympy:
+            return sp.legendre(j) - - j*(j+1)/(j+2)/(j+3)*sp.legendre(j+2)
+        return Leg.basis(j) - j*(j+1)/(j+2)/(j+3)*Leg.basis(j+2)
             
 
 
@@ -452,7 +454,7 @@ def test_helmholtz():
     ue = sp.besselj(0, x)
     f = ue.diff(x, 2)+ue
     domain = (0, 10)
-    for space in (DirichletChebyshev, DirichletLegendre, NeumannChebyshev,Sines, Cosines, NeumannLegendre):
+    for space in (NeumannLegendre, Cosines, DirichletChebyshev, DirichletLegendre, NeumannChebyshev,Sines):
         if space in (NeumannChebyshev, NeumannLegendre, Cosines):
             bc = ue.diff(x, 1).subs(x, domain[0]), ue.diff(
                 x, 1).subs(x, domain[1])
@@ -478,7 +480,6 @@ def test_convection_diffusion():
     f = 0
     domain = (0, 1)
     for space in (DirichletLegendre, DirichletChebyshev, Sines):
-        print(space.__name__)
         N = 50 if space is Sines else 16
         V = space(N, domain=domain, bc=(0, 1))
         u = TrialFunction(V)
